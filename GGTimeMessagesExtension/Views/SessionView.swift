@@ -22,6 +22,9 @@ struct SessionView: View {
     /// Selected popular game (if any)
     @State private var selectedPopularGame: String? = nil
     
+    /// Recently played games (last 4)
+    @State private var recentlyPlayed: [String] = []
+    
     /// Callback when user taps "Share"
     let onShare: (String, Date) -> Void
     
@@ -56,6 +59,13 @@ struct SessionView: View {
         return gameName
     }
     
+    // MARK: - Initialization
+    
+    init(onShare: @escaping (String, Date) -> Void, onCancel: @escaping () -> Void) {
+        self.onShare = onShare
+        self.onCancel = onCancel
+    }
+    
     // MARK: - Body
     
     var body: some View {
@@ -79,6 +89,33 @@ struct SessionView: View {
                             .multilineTextAlignment(.center)
                     }
                     .padding(.top, 20)
+                    
+                    // Recently Played Section
+                    if !recentlyPlayed.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label("Recently Played", systemImage: "clock.arrow.circlepath")
+                                .font(.headline)
+                                .foregroundColor(.primary)
+                            
+                            LazyVGrid(columns: [
+                                GridItem(.flexible()),
+                                GridItem(.flexible())
+                            ], spacing: 12) {
+                                ForEach(recentlyPlayed, id: \.self) { game in
+                                    RecentlyPlayedButton(
+                                        title: game,
+                                        isSelected: selectedPopularGame == game || gameName == game
+                                    ) {
+                                        selectGame(game)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        
+                        Divider()
+                            .padding(.horizontal)
+                    }
                     
                     // Game Selection Section
                     VStack(alignment: .leading, spacing: 12) {
@@ -160,6 +197,7 @@ struct SessionView: View {
                     // Action Buttons
                     VStack(spacing: 12) {
                         Button(action: {
+                            saveToRecentlyPlayed(effectiveGameName)
                             onShare(effectiveGameName, startTime)
                         }) {
                             HStack {
@@ -186,10 +224,57 @@ struct SessionView: View {
                 }
             }
             .navigationBarHidden(true)
+            .onAppear {
+                loadRecentlyPlayed()
+            }
         }
     }
     
     // MARK: - Helper Methods
+    
+    /// Loads recently played games from UserDefaults
+    private func loadRecentlyPlayed() {
+        if let saved = UserDefaults.standard.stringArray(forKey: "RecentlyPlayedGames") {
+            recentlyPlayed = Array(saved.prefix(4)) // Keep only last 4
+        }
+    }
+    
+    /// Saves a game to recently played list
+    private func saveToRecentlyPlayed(_ gameName: String) {
+        let trimmedGame = gameName.trimmingCharacters(in: .whitespaces)
+        guard !trimmedGame.isEmpty else { return }
+        
+        // Remove if already exists
+        recentlyPlayed.removeAll { $0 == trimmedGame }
+        
+        // Add to beginning
+        recentlyPlayed.insert(trimmedGame, at: 0)
+        
+        // Keep only last 4
+        recentlyPlayed = Array(recentlyPlayed.prefix(4))
+        
+        // Save to UserDefaults
+        UserDefaults.standard.set(recentlyPlayed, forKey: "RecentlyPlayedGames")
+    }
+    
+    /// Selects a game (from recently played or popular games)
+    private func selectGame(_ game: String) {
+        if selectedPopularGame == game || gameName == game {
+            // Deselect if already selected
+            selectedPopularGame = nil
+            gameName = ""
+        } else {
+            // Check if it's a popular game
+            if popularGames.contains(game) {
+                selectedPopularGame = game
+                gameName = ""
+            } else {
+                // It's a custom game
+                gameName = game
+                selectedPopularGame = nil
+            }
+        }
+    }
     
     /// Formats a date/time in a friendly way
     private func formatDateTime(_ date: Date) -> String {
@@ -205,6 +290,36 @@ struct SessionView: View {
         }
         
         return dateFormatter.string(from: date)
+    }
+}
+
+// MARK: - Recently Played Button
+
+struct RecentlyPlayedButton: View {
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 12))
+                    .foregroundColor(isSelected ? .white : .purple)
+                
+                Text(title)
+                    .font(.system(size: 14))
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .foregroundColor(isSelected ? .white : .primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .padding(.horizontal, 8)
+            .background(isSelected ? Color.purple : Color.purple.opacity(0.1))
+            .cornerRadius(10)
+        }
     }
 }
 
