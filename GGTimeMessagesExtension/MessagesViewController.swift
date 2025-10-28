@@ -24,7 +24,7 @@ class MessagesViewController: MSMessagesAppViewController {
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        print("✅ GG Time extension loaded")
+        print("✅ GG Time extension loaded - v2.0 with 4-button layout")
     }
     
     // MARK: - Conversation Handling
@@ -121,6 +121,9 @@ class MessagesViewController: MSMessagesAppViewController {
         print("💬 Presenting session bubble: \(session.gameName)")
         
         let currentUserName = getCurrentUserName(from: conversation)
+        print("🔍 DEBUG: currentUserName = \(currentUserName)")
+        print("🔍 DEBUG: participants = \(session.participants)")
+        print("🔍 DEBUG: hasParticipant = \(session.hasParticipant(name: currentUserName))")
         
         let bubbleView = SessionBubbleView(
             session: session,
