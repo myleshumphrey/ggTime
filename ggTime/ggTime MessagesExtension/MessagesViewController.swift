@@ -18,17 +18,17 @@ class MessagesViewController: MSMessagesAppViewController {
     /// Current game session being displayed/edited
     private var currentSession: GameSession?
     
-    /// Flag to prevent duplicate view presentations
-    private var isViewPresented = false
+    /// Contact store for retrieving contact names
+    private let contactStore = CNContactStore()
+    
+    /// Cache for participant names to avoid repeated contact lookups
+    private var nameCache: [UUID: String] = [:]
     
     // MARK: - Lifecycle
     
     override func viewDidLoad() {
         super.viewDidLoad()
-        print("✅ GG Time extension loaded")
-        
-        // Pre-warm the view to prevent "Hello World" flash
-        view.backgroundColor = .clear
+        print("✅ GG Time extension loaded - v2.0 with 4-button layout")
     }
     
     // MARK: - Conversation Handling
@@ -36,35 +36,21 @@ class MessagesViewController: MSMessagesAppViewController {
     override func willBecomeActive(with conversation: MSConversation) {
         super.willBecomeActive(with: conversation)
         
-        print("📍 willBecomeActive called, isViewPresented: \(isViewPresented)")
-        
-        // Prevent duplicate presentations
-        guard !isViewPresented else {
-            print("⚠️ View already presented, skipping")
-            return
-        }
-        
         // Check if we're viewing an existing session
         if let message = conversation.selectedMessage,
            let session = MessageEncoding.decode(from: message.url) {
-            print("📨 Found existing session: \(session.gameName)")
             currentSession = session
-            isViewPresented = true
             presentSessionBubble(session: session, conversation: conversation)
         } else {
-            print("➕ No existing session, showing create view")
             // Show create session view
-            isViewPresented = true
             presentCreateSessionView()
         }
     }
     
     override func didResignActive(with conversation: MSConversation) {
         super.didResignActive(with: conversation)
-        print("👋 didResignActive - resetting view flag")
-        isViewPresented = false
     }
-   
+    
     override func didReceive(_ message: MSMessage, conversation: MSConversation) {
         super.didReceive(message, conversation: conversation)
         
@@ -117,8 +103,7 @@ class MessagesViewController: MSMessagesAppViewController {
     
     /// Presents the create session view (game + time picker)
     private func presentCreateSessionView() {
-        let startTime = CFAbsoluteTimeGetCurrent()
-        print("🎮 Presenting create session view at \(startTime)")
+        print("🎮 Presenting create session view")
         
         let sessionView = SessionView(
             onShare: { [weak self] gameName, startTime in
@@ -128,13 +113,9 @@ class MessagesViewController: MSMessagesAppViewController {
                 self?.requestDismiss()
             }
         )
-        print("⏱️ SessionView created in \(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startTime))s")
         
         let hostingController = UIHostingController(rootView: sessionView)
-        print("⏱️ HostingController created in \(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startTime))s")
-        
         presentSwiftUIView(hostingController)
-        print("⏱️ Total presentation time: \(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startTime))s")
     }
     
     /// Presents the session bubble view (showing participants and join buttons)
@@ -142,6 +123,9 @@ class MessagesViewController: MSMessagesAppViewController {
         print("💬 Presenting session bubble: \(session.gameName)")
         
         let currentUserName = getCurrentUserName(from: conversation)
+        print("🔍 DEBUG: currentUserName = \(currentUserName)")
+        print("🔍 DEBUG: participants = \(session.participants)")
+        print("🔍 DEBUG: hasParticipant = \(session.hasParticipant(name: currentUserName))")
         
         let bubbleView = SessionBubbleView(
             session: session,
@@ -155,6 +139,12 @@ class MessagesViewController: MSMessagesAppViewController {
             },
             onLeave: { [weak self] in
                 self?.leaveSession()
+            },
+            onJoinDifferentTime: { [weak self] in
+                self?.presentJoinTimePicker()
+            },
+            onCantJoin: { [weak self] in
+                self?.joinSession(status: .cantJoin)
             }
         )
         
@@ -162,7 +152,24 @@ class MessagesViewController: MSMessagesAppViewController {
         presentSwiftUIView(hostingController)
     }
     
-    /// Helper to present a SwiftUI view (optimized for fast loading)
+    /// Presents the join time picker view
+    private func presentJoinTimePicker() {
+        print("⏰ Presenting join time picker")
+        
+        let timePickerView = JoinTimePickerView(
+            onConfirm: { [weak self] joinTime in
+                self?.joinSessionAtDifferentTime(joinTime: joinTime)
+            },
+            onCancel: { [weak self] in
+                self?.requestDismiss()
+            }
+        )
+        
+        let hostingController = UIHostingController(rootView: timePickerView)
+        presentSwiftUIView(hostingController)
+    }
+    
+    /// Helper to present a SwiftUI view
     private func presentSwiftUIView(_ hostingController: UIHostingController<some View>) {
         // Remove existing child view controllers
         for child in children {
@@ -171,19 +178,11 @@ class MessagesViewController: MSMessagesAppViewController {
             child.removeFromParent()
         }
         
-        // Configure hosting controller for optimal performance
-        hostingController.view.backgroundColor = .clear
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
-        
         // Add new hosting controller
         addChild(hostingController)
         view.addSubview(hostingController.view)
         
-        // Use frame-based layout for faster initial display
-        hostingController.view.frame = view.bounds
-        hostingController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        
-        // Also set constraints for proper resizing
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
             hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -260,6 +259,28 @@ class MessagesViewController: MSMessagesAppViewController {
         print("✅ \(userName) left the session")
     }
     
+    /// Adds current user to the session at a different time
+    private func joinSessionAtDifferentTime(joinTime: Date) {
+        guard let conversation = activeConversation,
+              let session = currentSession else {
+            print("❌ No active conversation or session")
+            return
+        }
+        
+        let userName = getCurrentUserName(from: conversation)
+        let updatedSession = session.addingOrUpdatingParticipant(
+            name: userName, 
+            status: .differentTime, 
+            joinTime: joinTime
+        )
+        currentSession = updatedSession
+        
+        // Update the message
+        updateMessage(with: updatedSession, in: conversation)
+        
+        print("✅ \(userName) joined at different time: \(joinTime)")
+    }
+    
     // MARK: - Message Creation
     
     /// Creates an MSMessage for a gaming session
@@ -272,13 +293,12 @@ class MessagesViewController: MSMessagesAppViewController {
         // Create message layout
         let layout = MSMessageTemplateLayout()
         layout.image = createSessionImage(for: session)
-        // imageTitle removed - game name is now shown in the image itself
         layout.caption = "\(session.formattedDate) at \(session.formattedTime)"
         layout.subcaption = "\(session.hostName) is dropping in at \(session.formattedTime)"
         layout.trailingCaption = participantsSummary(for: session)
         
         message.layout = layout
-        message.summaryText = "\(session.hostName) plans to play \(session.gameName) at \(session.formattedTime)"
+        message.summaryText = "\(session.hostName) wants to play \(session.gameName) at \(session.formattedTime)"
         
         return message
     }
@@ -297,7 +317,6 @@ class MessagesViewController: MSMessagesAppViewController {
         // Update layout
         let layout = MSMessageTemplateLayout()
         layout.image = createSessionImage(for: session)
-        // imageTitle removed - game name is now shown in the image itself
         layout.caption = "\(session.formattedDate) at \(session.formattedTime)"
         layout.subcaption = "\(session.hostName) is dropping in at \(session.formattedTime)"
         layout.trailingCaption = participantsSummary(for: session)
@@ -322,38 +341,76 @@ class MessagesViewController: MSMessagesAppViewController {
     
     /// Gets the current user's display name from the conversation
     private func getCurrentUserName(from conversation: MSConversation) -> String {
-        // NOTE: Change this to your own name!
-        // This will appear in the message text like "Myles plans to play..."
-        return "Myles"
+        let localParticipant = conversation.localParticipantIdentifier
         
-        // For a customizable version, you could:
-        // 1. Add UserDefaults to let users set their nickname in the app
-        // 2. Use UIDevice.current.name (shows as "Myles's iPhone")
-        // 3. Integrate with Game Center for gamer tags
+        // Check cache first
+        if let cachedName = nameCache[localParticipant] {
+            return cachedName
+        }
+        
+        // Try to get the contact name
+        let displayName = getContactName(for: localParticipant) ?? generateFriendlyName(from: localParticipant)
+        
+        // Cache the result
+        nameCache[localParticipant] = displayName
+        
+        return displayName
+    }
+    
+    /// Attempts to retrieve contact name for a participant
+    /// - Parameter identifier: The participant's UUID
+    /// - Returns: Contact name if found and authorized, nil otherwise
+    private func getContactName(for identifier: UUID) -> String? {
+        // Check authorization status
+        let authorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
+        
+        guard authorizationStatus == .authorized else {
+            // Don't request permission in iMessage extensions - it's not user-friendly
+            return nil
+        }
+        
+        // In a real app, you might map the UUID to a phone number or email
+        // For now, we'll return nil as iMessage doesn't provide direct contact mapping
+        // This is a placeholder for future enhancement
+        return nil
+    }
+    
+    /// Generates a friendly display name from UUID
+    /// - Parameter identifier: The participant's UUID
+    /// - Returns: A user-friendly name like "Player ABC123"
+    private func generateFriendlyName(from identifier: UUID) -> String {
+        let uuidString = identifier.uuidString
+        
+        // Take first 6 characters for a shorter, friendlier ID
+        let shortID = String(uuidString.prefix(6))
+        
+        return "Player \(shortID)"
     }
     
     /// Creates a summary of participants for the message caption
     private func participantsSummary(for session: GameSession) -> String {
-        let total = session.confirmedCount + session.maybeCount
+        let total = session.confirmedCount + session.maybeCount + session.differentTimeCount + session.cantJoinCount
         if total == 0 {
             return "No one joined yet"
         } else if session.confirmedCount > 0 {
             return "\(session.confirmedCount) confirmed"
-        } else {
+        } else if session.differentTimeCount > 0 {
+            return "\(session.differentTimeCount) different time"
+        } else if session.maybeCount > 0 {
             return "\(session.maybeCount) maybe"
+        } else if session.cantJoinCount > 0 {
+            return "\(session.cantJoinCount) can't join"
         }
+        return "No one joined yet"
     }
     
     /// Creates a summary for participant updates
     private func participantUpdateSummary(for session: GameSession) -> String {
-        let total = session.confirmedCount + session.maybeCount
+        let total = session.confirmedCount + session.maybeCount + session.differentTimeCount + session.cantJoinCount
         if total == 0 {
-            return "\(session.hostName) plans to play \(session.gameName) at \(session.formattedTime)"
-        } else if total == 1 {
-            return "\(session.hostName) and 1 other want to play \(session.gameName)"
-        } else {
-            return "\(session.hostName) and \(total) others want to play \(session.gameName)"
+            return "\(session.gameName) session at \(session.formattedTime)"
         }
+        return "\(total) people interested in \(session.gameName)"
     }
     
     /// Creates an image for the message bubble
@@ -438,3 +495,4 @@ class MessagesViewController: MSMessagesAppViewController {
         requestPresentationStyle(.compact)
     }
 }
+
