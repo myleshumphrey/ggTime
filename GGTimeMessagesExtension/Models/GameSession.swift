@@ -38,19 +38,23 @@ struct GameSession: Codable, Equatable {
         let name: String
         let status: ParticipantStatus
         let joinedAt: Date
+        let joinTime: Date?  // Optional custom join time (for differentTime status)
         
-        init(id: UUID = UUID(), name: String, status: ParticipantStatus, joinedAt: Date = Date()) {
+        init(id: UUID = UUID(), name: String, status: ParticipantStatus, joinedAt: Date = Date(), joinTime: Date? = nil) {
             self.id = id
             self.name = name
             self.status = status
             self.joinedAt = joinedAt
+            self.joinTime = joinTime
         }
     }
     
     /// Status of a participant's attendance
     enum ParticipantStatus: String, Codable {
-        case confirmed = "confirmed"  // Definitely joining
+        case confirmed = "confirmed"  // Definitely joining at original time
         case maybe = "maybe"          // Might join
+        case differentTime = "differentTime"  // Joining at a different time
+        case cantJoin = "cantJoin"    // Cannot join
     }
     
     // MARK: - Initialization
@@ -77,8 +81,9 @@ struct GameSession: Codable, Equatable {
     /// - Parameters:
     ///   - name: Display name of the participant
     ///   - status: Their attendance status
+    ///   - joinTime: Optional custom join time (for differentTime status)
     /// - Returns: Updated session with the participant added/updated
-    func addingOrUpdatingParticipant(name: String, status: ParticipantStatus) -> GameSession {
+    func addingOrUpdatingParticipant(name: String, status: ParticipantStatus, joinTime: Date? = nil) -> GameSession {
         var updatedParticipants = participants
         
         // Check if participant already exists
@@ -88,11 +93,12 @@ struct GameSession: Codable, Equatable {
                 id: updatedParticipants[index].id,
                 name: name,
                 status: status,
-                joinedAt: updatedParticipants[index].joinedAt
+                joinedAt: updatedParticipants[index].joinedAt,
+                joinTime: joinTime
             )
         } else {
             // Add new participant
-            updatedParticipants.append(Participant(name: name, status: status))
+            updatedParticipants.append(Participant(name: name, status: status, joinTime: joinTime))
         }
         
         return GameSession(
@@ -147,6 +153,16 @@ struct GameSession: Codable, Equatable {
         return participants.filter { $0.status == .maybe }.count
     }
     
+    /// Total number of different time participants
+    var differentTimeCount: Int {
+        return participants.filter { $0.status == .differentTime }.count
+    }
+    
+    /// Total number of participants who can't join
+    var cantJoinCount: Int {
+        return participants.filter { $0.status == .cantJoin }.count
+    }
+    
     /// All confirmed participant names
     var confirmedNames: [String] {
         return participants
@@ -158,6 +174,23 @@ struct GameSession: Codable, Equatable {
     var maybeNames: [String] {
         return participants
             .filter { $0.status == .maybe }
+            .map { $0.name }
+    }
+    
+    /// All different time participants with their join times
+    var differentTimeParticipants: [(name: String, joinTime: Date)] {
+        return participants
+            .filter { $0.status == .differentTime }
+            .compactMap { participant in
+                guard let joinTime = participant.joinTime else { return nil }
+                return (name: participant.name, joinTime: joinTime)
+            }
+    }
+    
+    /// All participants who can't join
+    var cantJoinNames: [String] {
+        return participants
+            .filter { $0.status == .cantJoin }
             .map { $0.name }
     }
     

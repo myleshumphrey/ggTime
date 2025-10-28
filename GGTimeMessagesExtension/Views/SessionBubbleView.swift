@@ -28,6 +28,12 @@ struct SessionBubbleView: View {
     /// Callback when user taps "Leave"
     let onLeave: (() -> Void)?
     
+    /// Callback when user taps "Join at Different Time"
+    let onJoinDifferentTime: (() -> Void)?
+    
+    /// Callback when user taps "Can't Join"
+    let onCantJoin: (() -> Void)?
+    
     /// Whether this is an interactive bubble (false for compact/message history view)
     let isInteractive: Bool
     
@@ -39,7 +45,9 @@ struct SessionBubbleView: View {
         isInteractive: Bool = true,
         onJoin: (() -> Void)? = nil,
         onMaybe: (() -> Void)? = nil,
-        onLeave: (() -> Void)? = nil
+        onLeave: (() -> Void)? = nil,
+        onJoinDifferentTime: (() -> Void)? = nil,
+        onCantJoin: (() -> Void)? = nil
     ) {
         self.session = session
         self.currentUserName = currentUserName
@@ -47,6 +55,8 @@ struct SessionBubbleView: View {
         self.onJoin = onJoin
         self.onMaybe = onMaybe
         self.onLeave = onLeave
+        self.onJoinDifferentTime = onJoinDifferentTime
+        self.onCantJoin = onCantJoin
     }
     
     // MARK: - Computed Properties
@@ -125,7 +135,24 @@ struct SessionBubbleView: View {
                     )
                 }
                 
-                if session.confirmedCount == 0 && session.maybeCount == 0 {
+                if session.differentTimeCount > 0 {
+                    DifferentTimeRow(
+                        participants: session.differentTimeParticipants,
+                        currentUserName: currentUserName
+                    )
+                }
+                
+                if session.cantJoinCount > 0 {
+                    ParticipantRow(
+                        icon: "xmark.circle.fill",
+                        color: .red,
+                        title: "Can't Join (\(session.cantJoinCount))",
+                        names: session.cantJoinNames,
+                        currentUserName: currentUserName
+                    )
+                }
+                
+                if session.confirmedCount == 0 && session.maybeCount == 0 && session.differentTimeCount == 0 && session.cantJoinCount == 0 {
                     HStack {
                         Image(systemName: "person.2")
                             .foregroundColor(.secondary)
@@ -157,36 +184,82 @@ struct SessionBubbleView: View {
                         .foregroundColor(.red)
                     }
                 } else {
-                    // User hasn't joined - show join/maybe buttons
-                    HStack(spacing: 0) {
-                        Button(action: {
-                            onJoin?()
-                        }) {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                Text("Join")
-                                    .fontWeight(.semibold)
+                    // User hasn't joined - show all 4 join options
+                    VStack(spacing: 0) {
+                        // Top row: Join and Maybe buttons
+                        HStack(spacing: 0) {
+                            Button(action: {
+                                onJoin?()
+                            }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.title3)
+                                    Text("Join")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .foregroundColor(.white)
+                                .background(Color.green)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .foregroundColor(.white)
-                            .background(Color.green)
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                onMaybe?()
+                            }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "questionmark.circle.fill")
+                                        .font(.title3)
+                                    Text("Maybe")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .foregroundColor(.white)
+                                .background(Color.orange)
+                            }
                         }
                         
                         Divider()
                         
-                        Button(action: {
-                            onMaybe?()
-                        }) {
-                            HStack {
-                                Image(systemName: "questionmark.circle.fill")
-                                Text("Maybe")
-                                    .fontWeight(.semibold)
+                        // Bottom row: Different Time and Can't Join buttons
+                        HStack(spacing: 0) {
+                            Button(action: {
+                                onJoinDifferentTime?()
+                            }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "clock.arrow.circlepath")
+                                        .font(.title3)
+                                    Text("Different Time")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .foregroundColor(.white)
+                                .background(Color.blue)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .foregroundColor(.white)
-                            .background(Color.orange)
+                            
+                            Divider()
+                            
+                            Button(action: {
+                                onCantJoin?()
+                            }) {
+                                VStack(spacing: 4) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.title3)
+                                    Text("Can't Join")
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .foregroundColor(.white)
+                                .background(Color.red)
+                            }
                         }
                     }
                 }
@@ -198,6 +271,70 @@ struct SessionBubbleView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.purple.opacity(0.3), lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - Different Time Row
+
+struct DifferentTimeRow: View {
+    let participants: [(name: String, joinTime: Date)]
+    let currentUserName: String?
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundColor(.blue)
+                Text("Different Time (\(participants.count))")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(participants, id: \.name) { participant in
+                    DifferentTimeTag(
+                        name: participant.name,
+                        joinTime: participant.joinTime,
+                        isCurrentUser: participant.name == currentUserName
+                    )
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Different Time Tag
+
+struct DifferentTimeTag: View {
+    let name: String
+    let joinTime: Date
+    let isCurrentUser: Bool
+    
+    private var formattedTime: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: joinTime)
+    }
+    
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(name)
+                .font(.caption)
+                .fontWeight(isCurrentUser ? .bold : .regular)
+                .foregroundColor(isCurrentUser ? .blue : .primary)
+            
+            Text("at \(formattedTime)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.blue.opacity(isCurrentUser ? 0.3 : 0.15))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isCurrentUser ? Color.blue : Color.clear, lineWidth: 1)
         )
     }
 }
@@ -302,7 +439,8 @@ struct SessionBubbleView_Previews: PreviewProvider {
                 isInteractive: true,
                 onJoin: { print("Join") },
                 onMaybe: { print("Maybe") },
-                onLeave: { print("Leave") }
+                onLeave: { print("Leave") },
+                onJoinDifferentTime: { print("Join at Different Time") }
             )
             .padding()
             
@@ -317,7 +455,8 @@ struct SessionBubbleView_Previews: PreviewProvider {
                 isInteractive: true,
                 onJoin: { print("Join") },
                 onMaybe: { print("Maybe") },
-                onLeave: { print("Leave") }
+                onLeave: { print("Leave") },
+                onJoinDifferentTime: { print("Join at Different Time") }
             )
             .padding()
         }

@@ -134,10 +134,33 @@ class MessagesViewController: MSMessagesAppViewController {
             },
             onLeave: { [weak self] in
                 self?.leaveSession()
+            },
+            onJoinDifferentTime: { [weak self] in
+                self?.presentJoinTimePicker()
+            },
+            onCantJoin: { [weak self] in
+                self?.joinSession(status: .cantJoin)
             }
         )
         
         let hostingController = UIHostingController(rootView: bubbleView)
+        presentSwiftUIView(hostingController)
+    }
+    
+    /// Presents the join time picker view
+    private func presentJoinTimePicker() {
+        print("⏰ Presenting join time picker")
+        
+        let timePickerView = JoinTimePickerView(
+            onConfirm: { [weak self] joinTime in
+                self?.joinSessionAtDifferentTime(joinTime: joinTime)
+            },
+            onCancel: { [weak self] in
+                self?.dismiss()
+            }
+        )
+        
+        let hostingController = UIHostingController(rootView: timePickerView)
         presentSwiftUIView(hostingController)
     }
     
@@ -231,6 +254,28 @@ class MessagesViewController: MSMessagesAppViewController {
         print("✅ \(userName) left the session")
     }
     
+    /// Adds current user to the session at a different time
+    private func joinSessionAtDifferentTime(joinTime: Date) {
+        guard let conversation = activeConversation,
+              let session = currentSession else {
+            print("❌ No active conversation or session")
+            return
+        }
+        
+        let userName = getCurrentUserName(from: conversation)
+        let updatedSession = session.addingOrUpdatingParticipant(
+            name: userName, 
+            status: .differentTime, 
+            joinTime: joinTime
+        )
+        currentSession = updatedSession
+        
+        // Update the message
+        updateMessage(with: updatedSession, in: conversation)
+        
+        print("✅ \(userName) joined at different time: \(joinTime)")
+    }
+    
     // MARK: - Message Creation
     
     /// Creates an MSMessage for a gaming session
@@ -304,19 +349,24 @@ class MessagesViewController: MSMessagesAppViewController {
     
     /// Creates a summary of participants for the message caption
     private func participantsSummary(for session: GameSession) -> String {
-        let total = session.confirmedCount + session.maybeCount
+        let total = session.confirmedCount + session.maybeCount + session.differentTimeCount + session.cantJoinCount
         if total == 0 {
             return "No one joined yet"
         } else if session.confirmedCount > 0 {
             return "\(session.confirmedCount) confirmed"
-        } else {
+        } else if session.differentTimeCount > 0 {
+            return "\(session.differentTimeCount) different time"
+        } else if session.maybeCount > 0 {
             return "\(session.maybeCount) maybe"
+        } else if session.cantJoinCount > 0 {
+            return "\(session.cantJoinCount) can't join"
         }
+        return "No one joined yet"
     }
     
     /// Creates a summary for participant updates
     private func participantUpdateSummary(for session: GameSession) -> String {
-        let total = session.confirmedCount + session.maybeCount
+        let total = session.confirmedCount + session.maybeCount + session.differentTimeCount + session.cantJoinCount
         if total == 0 {
             return "\(session.gameName) session at \(session.formattedTime)"
         }

@@ -41,32 +41,7 @@
       "size" : "1024x1024"
     },
     {
-      "idiom" : "universal",
-      "platform" : "ios",
-      "scale" : "2x",
-      "size" : "27x20"
-    },
-    {
-      "idiom" : "universal",
-      "platform" : "ios",
-      "scale" : "3x",
-      "size" : "27x20"
-    },
-    {
-      "idiom" : "universal",
-      "platform" : "ios",
-      "scale" : "2x",
-      "size" : "32x24"
-    },
-    {
-      "idiom" : "universal",
-      "platform" : "ios",
-      "scale" : "3x",
-      "size" : "32x24"
-    },
-    {
-      "idiom" : "ios-marketing",
-      "platform" : "ios",
+      "idiom" : "messages-app-store",
       "scale" : "1x",
       "size" : "1024x768"
     }

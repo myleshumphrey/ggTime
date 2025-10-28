@@ -9,6 +9,7 @@
 import UIKit
 import Messages
 import SwiftUI
+import Contacts
 
 class MessagesViewController: MSMessagesAppViewController {
     
@@ -17,11 +18,17 @@ class MessagesViewController: MSMessagesAppViewController {
     /// Current game session being displayed/edited
     private var currentSession: GameSession?
     
+    /// Flag to prevent duplicate view presentations
+    private var isViewPresented = false
+    
     // MARK: - Lifecycle
     
     override func viewDidLoad() {
         super.viewDidLoad()
         print("✅ GG Time extension loaded")
+        
+        // Pre-warm the view to prevent "Hello World" flash
+        view.backgroundColor = .clear
     }
     
     // MARK: - Conversation Handling
@@ -29,19 +36,33 @@ class MessagesViewController: MSMessagesAppViewController {
     override func willBecomeActive(with conversation: MSConversation) {
         super.willBecomeActive(with: conversation)
         
+        print("📍 willBecomeActive called, isViewPresented: \(isViewPresented)")
+        
+        // Prevent duplicate presentations
+        guard !isViewPresented else {
+            print("⚠️ View already presented, skipping")
+            return
+        }
+        
         // Check if we're viewing an existing session
         if let message = conversation.selectedMessage,
            let session = MessageEncoding.decode(from: message.url) {
+            print("📨 Found existing session: \(session.gameName)")
             currentSession = session
+            isViewPresented = true
             presentSessionBubble(session: session, conversation: conversation)
         } else {
+            print("➕ No existing session, showing create view")
             // Show create session view
+            isViewPresented = true
             presentCreateSessionView()
         }
     }
     
     override func didResignActive(with conversation: MSConversation) {
         super.didResignActive(with: conversation)
+        print("👋 didResignActive - resetting view flag")
+        isViewPresented = false
     }
    
     override func didReceive(_ message: MSMessage, conversation: MSConversation) {
@@ -96,7 +117,8 @@ class MessagesViewController: MSMessagesAppViewController {
     
     /// Presents the create session view (game + time picker)
     private func presentCreateSessionView() {
-        print("🎮 Presenting create session view")
+        let startTime = CFAbsoluteTimeGetCurrent()
+        print("🎮 Presenting create session view at \(startTime)")
         
         let sessionView = SessionView(
             onShare: { [weak self] gameName, startTime in
@@ -106,9 +128,13 @@ class MessagesViewController: MSMessagesAppViewController {
                 self?.requestDismiss()
             }
         )
+        print("⏱️ SessionView created in \(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startTime))s")
         
         let hostingController = UIHostingController(rootView: sessionView)
+        print("⏱️ HostingController created in \(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startTime))s")
+        
         presentSwiftUIView(hostingController)
+        print("⏱️ Total presentation time: \(String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startTime))s")
     }
     
     /// Presents the session bubble view (showing participants and join buttons)
@@ -136,7 +162,7 @@ class MessagesViewController: MSMessagesAppViewController {
         presentSwiftUIView(hostingController)
     }
     
-    /// Helper to present a SwiftUI view
+    /// Helper to present a SwiftUI view (optimized for fast loading)
     private func presentSwiftUIView(_ hostingController: UIHostingController<some View>) {
         // Remove existing child view controllers
         for child in children {
@@ -145,11 +171,19 @@ class MessagesViewController: MSMessagesAppViewController {
             child.removeFromParent()
         }
         
+        // Configure hosting controller for optimal performance
+        hostingController.view.backgroundColor = .clear
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        
         // Add new hosting controller
         addChild(hostingController)
         view.addSubview(hostingController.view)
         
-        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        // Use frame-based layout for faster initial display
+        hostingController.view.frame = view.bounds
+        hostingController.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        
+        // Also set constraints for proper resizing
         NSLayoutConstraint.activate([
             hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
             hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
@@ -238,13 +272,13 @@ class MessagesViewController: MSMessagesAppViewController {
         // Create message layout
         let layout = MSMessageTemplateLayout()
         layout.image = createSessionImage(for: session)
-        layout.imageTitle = session.gameName
+        // imageTitle removed - game name is now shown in the image itself
         layout.caption = "\(session.formattedDate) at \(session.formattedTime)"
-        layout.subcaption = "Hosted by \(session.hostName)"
+        layout.subcaption = "\(session.hostName) is dropping in at \(session.formattedTime)"
         layout.trailingCaption = participantsSummary(for: session)
         
         message.layout = layout
-        message.summaryText = "\(session.hostName) wants to play \(session.gameName) at \(session.formattedTime)"
+        message.summaryText = "\(session.hostName) plans to play \(session.gameName) at \(session.formattedTime)"
         
         return message
     }
@@ -263,9 +297,9 @@ class MessagesViewController: MSMessagesAppViewController {
         // Update layout
         let layout = MSMessageTemplateLayout()
         layout.image = createSessionImage(for: session)
-        layout.imageTitle = session.gameName
+        // imageTitle removed - game name is now shown in the image itself
         layout.caption = "\(session.formattedDate) at \(session.formattedTime)"
-        layout.subcaption = "Hosted by \(session.hostName)"
+        layout.subcaption = "\(session.hostName) is dropping in at \(session.formattedTime)"
         layout.trailingCaption = participantsSummary(for: session)
         
         updatedMessage.layout = layout
@@ -288,11 +322,14 @@ class MessagesViewController: MSMessagesAppViewController {
     
     /// Gets the current user's display name from the conversation
     private func getCurrentUserName(from conversation: MSConversation) -> String {
-        // Use local participant identifier
-        let localParticipant = conversation.localParticipantIdentifier
-        // Use a shortened version of the UUID as fallback
-        let shortID = String(localParticipant.uuidString.prefix(8))
-        return "User-\(shortID)"
+        // NOTE: Change this to your own name!
+        // This will appear in the message text like "Myles plans to play..."
+        return "Myles"
+        
+        // For a customizable version, you could:
+        // 1. Add UserDefaults to let users set their nickname in the app
+        // 2. Use UIDevice.current.name (shows as "Myles's iPhone")
+        // 3. Integrate with Game Center for gamer tags
     }
     
     /// Creates a summary of participants for the message caption
@@ -311,9 +348,12 @@ class MessagesViewController: MSMessagesAppViewController {
     private func participantUpdateSummary(for session: GameSession) -> String {
         let total = session.confirmedCount + session.maybeCount
         if total == 0 {
-            return "\(session.gameName) session at \(session.formattedTime)"
+            return "\(session.hostName) plans to play \(session.gameName) at \(session.formattedTime)"
+        } else if total == 1 {
+            return "\(session.hostName) and 1 other want to play \(session.gameName)"
+        } else {
+            return "\(session.hostName) and \(total) others want to play \(session.gameName)"
         }
-        return "\(total) people interested in \(session.gameName)"
     }
     
     /// Creates an image for the message bubble
@@ -353,18 +393,41 @@ class MessagesViewController: MSMessagesAppViewController {
                 icon.draw(in: iconRect)
             }
             
-            // Game name
+            // Personalized message text with better spacing
             let paragraphStyle = NSMutableParagraphStyle()
             paragraphStyle.alignment = .center
+            paragraphStyle.lineBreakMode = .byWordWrapping
+            paragraphStyle.lineSpacing = 4 // Add spacing between lines
             
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.boldSystemFont(ofSize: 24),
-                .foregroundColor: UIColor.white,
-                .paragraphStyle: paragraphStyle
+            // Line 1: "Myles wants to play"
+            let line1Attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 17, weight: .medium),
+                .foregroundColor: UIColor.white
             ]
+            let line1 = "\(session.hostName) wants to play"
+            let line1Size = (line1 as NSString).size(withAttributes: line1Attributes)
+            let line1Rect = CGRect(x: (300 - line1Size.width) / 2, y: 115, width: line1Size.width, height: line1Size.height)
+            line1.draw(in: line1Rect, withAttributes: line1Attributes)
             
-            let textRect = CGRect(x: 20, y: 130, width: 260, height: 50)
-            session.gameName.draw(in: textRect, withAttributes: attributes)
+            // Line 2: Game name (larger, bold)
+            let line2Attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.boldSystemFont(ofSize: 22),
+                .foregroundColor: UIColor.white
+            ]
+            let line2 = session.gameName
+            let line2Size = (line2 as NSString).size(withAttributes: line2Attributes)
+            let line2Rect = CGRect(x: (300 - line2Size.width) / 2, y: 140, width: line2Size.width, height: line2Size.height)
+            line2.draw(in: line2Rect, withAttributes: line2Attributes)
+            
+            // Line 3: Date and time
+            let line3Attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 17, weight: .medium),
+                .foregroundColor: UIColor.white
+            ]
+            let line3 = "\(session.formattedDate) at \(session.formattedTime)"
+            let line3Size = (line3 as NSString).size(withAttributes: line3Attributes)
+            let line3Rect = CGRect(x: (300 - line3Size.width) / 2, y: 170, width: line3Size.width, height: line3Size.height)
+            line3.draw(in: line3Rect, withAttributes: line3Attributes)
         }
         
         return image
