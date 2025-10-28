@@ -57,6 +57,9 @@ struct SessionBubbleView: View {
         self.onLeave = onLeave
         self.onJoinDifferentTime = onJoinDifferentTime
         self.onCantJoin = onCantJoin
+        
+        print("🔍 SessionBubbleView init - hasParticipant: \(session.hasParticipant(name: currentUserName ?? ""))")
+        print("🔍 SessionBubbleView init - onCantJoin callback: \(onCantJoin != nil ? "SET" : "NIL")")
     }
     
     // MARK: - Computed Properties
@@ -169,8 +172,11 @@ struct SessionBubbleView: View {
             if isInteractive {
                 Divider()
                 
+                let _ = print("🔍 DEBUG: isUserParticipating = \(isUserParticipating), userStatus = \(String(describing: userStatus))")
+                
                 if isUserParticipating {
                     // User is already participating - show leave button
+                    let _ = print("🔍 DEBUG: Showing Leave button")
                     Button(action: {
                         onLeave?()
                     }) {
@@ -185,6 +191,7 @@ struct SessionBubbleView: View {
                     }
                 } else {
                     // User hasn't joined - show all 4 join options
+                    let _ = print("🔍 DEBUG: Showing 4-button layout")
                     VStack(spacing: 0) {
                         // Top row: Join and Maybe buttons
                         HStack(spacing: 0) {
