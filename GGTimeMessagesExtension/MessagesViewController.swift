@@ -9,6 +9,7 @@
 import UIKit
 import Messages
 import SwiftUI
+import Contacts
 
 class MessagesViewController: MSMessagesAppViewController {
     
@@ -19,6 +20,12 @@ class MessagesViewController: MSMessagesAppViewController {
     
     /// Current game session being displayed/edited
     private var currentSession: GameSession?
+    
+    /// Contact store for retrieving contact names
+    private let contactStore = CNContactStore()
+    
+    /// Cache for participant names to avoid repeated contact lookups
+    private var nameCache: [UUID: String] = [:]
     
     // MARK: - Lifecycle
     
@@ -341,13 +348,52 @@ class MessagesViewController: MSMessagesAppViewController {
     
     /// Gets the current user's display name from the conversation
     private func getCurrentUserName(from conversation: MSConversation) -> String {
-        // Try to get local participant name
-        if let localParticipant = conversation.localParticipantIdentifier {
-            // Use a shortened version of the UUID as fallback
-            let shortID = String(localParticipant.uuidString.prefix(8))
-            return "User-\(shortID)"
+        guard let localParticipant = conversation.localParticipantIdentifier else {
+            return "Guest"
         }
-        return "Guest"
+        
+        // Check cache first
+        if let cachedName = nameCache[localParticipant] {
+            return cachedName
+        }
+        
+        // Try to get the contact name
+        let displayName = getContactName(for: localParticipant) ?? generateFriendlyName(from: localParticipant)
+        
+        // Cache the result
+        nameCache[localParticipant] = displayName
+        
+        return displayName
+    }
+    
+    /// Attempts to retrieve contact name for a participant
+    /// - Parameter identifier: The participant's UUID
+    /// - Returns: Contact name if found and authorized, nil otherwise
+    private func getContactName(for identifier: UUID) -> String? {
+        // Check authorization status
+        let authorizationStatus = CNContactStore.authorizationStatus(for: .contacts)
+        
+        guard authorizationStatus == .authorized else {
+            // Don't request permission in iMessage extensions - it's not user-friendly
+            return nil
+        }
+        
+        // In a real app, you might map the UUID to a phone number or email
+        // For now, we'll return nil as iMessage doesn't provide direct contact mapping
+        // This is a placeholder for future enhancement
+        return nil
+    }
+    
+    /// Generates a friendly display name from UUID
+    /// - Parameter identifier: The participant's UUID
+    /// - Returns: A user-friendly name like "Player ABC123"
+    private func generateFriendlyName(from identifier: UUID) -> String {
+        let uuidString = identifier.uuidString
+        
+        // Take first 6 characters for a shorter, friendlier ID
+        let shortID = String(uuidString.prefix(6))
+        
+        return "Player \(shortID)"
     }
     
     /// Creates a summary of participants for the message caption

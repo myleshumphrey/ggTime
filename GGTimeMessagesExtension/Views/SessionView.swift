@@ -38,7 +38,7 @@ struct SessionView: View {
         "⚔️ League of Legends",
         "🔫 Call of Duty",
         "🏗️ Fortnite",
-        "🎯 Apex Legends",
+        "🎯 R6: Siege",
         "⛏️ Minecraft",
         "🚀 Rocket League",
         "👾 Among Us"
