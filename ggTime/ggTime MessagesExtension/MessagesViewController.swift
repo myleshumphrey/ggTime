@@ -50,7 +50,7 @@ class MessagesViewController: MSMessagesAppViewController {
     override func didResignActive(with conversation: MSConversation) {
         super.didResignActive(with: conversation)
     }
-    
+   
     override func didReceive(_ message: MSMessage, conversation: MSConversation) {
         super.didReceive(message, conversation: conversation)
         
